@@ -1,4 +1,4 @@
-# ERC2429
+# ERC2429 - WIP
 Implementation of ERC2429
 
 ERC: https://github.com/ethereum/EIPs/pull/2429
