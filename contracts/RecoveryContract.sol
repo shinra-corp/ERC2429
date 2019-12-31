@@ -1,4 +1,4 @@
-pragma solidity >=0.5.13 <0.6.0;
+pragma solidity >=0.6.0 <0.7.0;
 
 /*
     Implementation of Secret Multisig Recovery - ERC 2429.
@@ -21,7 +21,7 @@ contract AccountContract is IMultiRecovery, Controlled {
     bytes32 public secretThresholdHash; //How many peers is needed for a recovery, MUST keccak256(hash_to_execute, threshold).
     bytes32 public addressListMerkleRoot; //Standard merkle tree, each leaf MUST keccak256(hash_to_peer, ethereum_address).
 
-    uint256 public nonce;
+    uint256 public override nonce;
 
     Setup private _pendingSetup;
 
@@ -50,6 +50,7 @@ contract AccountContract is IMultiRecovery, Controlled {
         bytes32 _addressListMerkleRoot
     )
     external
+    override
     onlyController
     {
         //If is a fresh setup, don´t delay configuration
@@ -71,6 +72,7 @@ contract AccountContract is IMultiRecovery, Controlled {
 
     function cancelSetup()
         external
+        override
         onlyController
     {
         delete _pendingSetup;
@@ -82,6 +84,7 @@ contract AccountContract is IMultiRecovery, Controlled {
      */
     function activate()
     external
+    override
     {
         require(_pendingSetup.setup_timestamp > 0, "No pending setup");
         require(_pendingSetup.setup_timestamp + setupDelay <= now, "Waiting delay");
@@ -105,11 +108,12 @@ contract AccountContract is IMultiRecovery, Controlled {
      */
     function approve(bytes32 _proofPubHash, bytes32 _secretCall, bytes32[] calldata _proof, bytes calldata _ensName)
     external
+    override
     {
         require(MerkleProof.verify(
             _proof,
             addressListMerkleRoot,
-            keccak256(abi.encodePacked(_proofPubHash, _getChainID(), msg.sender))
+            keccak256(abi.encodePacked(_proofPubHash, msg.sender))
         ), "Invalid proof");
 
         //INCOMPLETE IMPLEMENTATION - ENS RESOLVER and REMOTE CALL
@@ -136,13 +140,13 @@ contract AccountContract is IMultiRecovery, Controlled {
         bytes calldata _ensName
     )
     external
+    override
     {
         bytes32 signatureHash = ECDSA.toERC191SignedMessage(
             msg.sender,
             abi.encodePacked(
                 controller,
                 publicHash,
-                _getChainID(),
                 _secretCall
             )
         );
@@ -175,6 +179,7 @@ contract AccountContract is IMultiRecovery, Controlled {
         address[] calldata _friendList
     )
     external
+    override
     {
         require(publicHash != bytes32(0), "Recovery not set");
         uint256 _threshold = _friendList.length;
@@ -211,16 +216,5 @@ contract AccountContract is IMultiRecovery, Controlled {
         (success, ) = _dest.call(_data);
         emit Execution(success);
 
-    }
-
-    /**
-     * @notice get network identification where this contract is running
-     */
-    function _getChainID() internal pure returns (uint256) {
-        uint256 id;
-        assembly {
-            id := chainid()
-        }
-        return id;
     }
 }
