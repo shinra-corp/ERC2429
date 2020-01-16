@@ -126,6 +126,8 @@ contract ERC2429 is IERC2429 {
         override
     {
         require(_signers.length == _weights.length && _signers.length == _ensNodes.length, 'signers and weight should match');
+        require(_signatures.length / 65 == _signers.length, 'signatures number dont match');
+
         for(uint256 i = 0; i <_signers.length; i++) {
             bytes32 signingHash = ECDSA.toERC191SignedMessage(
                 address(this), abi.encodePacked(_getChainID(), _approveHash, _peerHash, _weights[i], _ensNodes[i])
@@ -133,8 +135,8 @@ contract ERC2429 is IERC2429 {
             require(_signers[i] != address(0), "Invalid signer");
             require(
                 (
-                    isContract(_signers[i]) && IERC1271(_signers[i]).isValidSignature(abi.encodePacked(signingHash), _signatures) == EIP1271_MAGICVALUE
-                ) || ECDSA.recover(signingHash, _signatures) == _signers[i],
+                    isContract(_signers[i]) && IERC1271(_signers[i]).isValidSignature(abi.encodePacked(signingHash), _slice(_signatures, i)) == EIP1271_MAGICVALUE
+                ) || ECDSA.recover(signingHash, _slice(_signatures, i)) == _signers[i],
                 "Invalid signature");
 
             approveExecution(_signers[i],  _approveHash, _peerHash, _weights[i], _ensNodes[i]);
@@ -250,5 +252,20 @@ contract ERC2429 is IERC2429 {
             id := chainid()
         }
         return id;
+    }
+
+    /**
+     * @dev
+     * @param _signatures aggredated signatures
+     * @param _index which signature to select
+     * @return s return part of the stream
+     */
+    function _slice(bytes memory _signatures, uint256 _index) internal pure returns(bytes memory s) {
+
+        assembly {
+            let offset := mul(_index, 65)
+            s := mload(add(_signatures, 65))
+        }
+
     }
 }
