@@ -12,6 +12,7 @@ pragma solidity >=0.6.0 <0.7.0;
     requires: 137, 191, 831, 1271, 1344
 */
 
+import "./IERC2429.sol";
 import "./interfaces/IENS.sol";
 import "./interfaces/IENSResolver.sol";
 import "./interfaces/IERC1271.sol";
@@ -19,7 +20,7 @@ import "./ECDSA.sol";
 import "./MerkleMultiProof.sol";
 //import "./SafeMath.sol";
 
-contract ERC2429 {
+contract ERC2429 is IERC2429 {
 
  //   using SafeMath for uint256;
 
@@ -51,7 +52,6 @@ contract ERC2429 {
     }
 
 
-    event SetupRequested(address indexed who, uint256 activation);
     event Activated(address indexed who);
     event Approved(bytes32 indexed approveHash, address approver, uint256 weight);
     event Execution(address indexed who, bool success);
@@ -70,6 +70,7 @@ contract ERC2429 {
         uint256 _setupDelay
     )
         external
+        override
     {
         //filter
         require(!discardedPubHash[_publicHash], "publicHash already used");
@@ -99,40 +100,45 @@ contract ERC2429 {
         bytes32 _ensNode
     )
         external
+        override
     {
         approveExecution(msg.sender, _approveHash, _peerHash, _weight, _ensNode);
     }
 
     /**
-     * @notice Approve a recovery using an ethereum signed message
-     * @param _signer address of _signature processor. if _signer is a contract, must be ERC1271.
-     * @param _approveHash Hash of the recovery call
-     * @param _weight Amount of weight from the signature
-     * @param _ensNode if present, the _proof is checked against _ensName.
-     * @param _signature ERC191 signature
+     * @notice Approve a recovery execution using an ethereum signed message..
+     * @param _approveHash Hash of the recovery call.
+     * @param _peerHash seed of `publicHash`.
+     * @param _weights Amount of weight from the signature for each signer.
+     * @param _ensNodes if present, the _proof is checked against _ensName for the specified signer.
+     * @param _signers address of _signature processor. if _signer is a contract, must be ERC1271
+     * @param _signatures appended ERC191 signatures.
      */
     function approvePreSigned(
-        address _signer,
         bytes32 _approveHash,
         bytes32 _peerHash,
-        uint256 _weight,
-        bytes32 _ensNode,
-        bytes calldata _signature
+        uint256[] calldata _weights,
+        bytes32[] calldata _ensNodes,
+        address[] calldata _signers,
+        bytes calldata _signatures
     )
         external
+        override
     {
-        bytes32 signingHash = ECDSA.toERC191SignedMessage(
-            address(this), abi.encodePacked(_getChainID(), _approveHash, _peerHash, _weight, _ensNode)
-        );
+        for(uint256 i = 0; i <_signers.length; i++) {
+            bytes32 signingHash = ECDSA.toERC191SignedMessage(
+                address(this), abi.encodePacked(_getChainID(), _approveHash, _peerHash, _weights[i], _ensNodes[0])
+            );
+            require(_signers[i] != address(0), "Invalid signer");
+            require(
+                (
+                    isContract(_signers[i]) && IERC1271(_signers[i]).isValidSignature(abi.encodePacked(signingHash), _signatures) == EIP1271_MAGICVALUE
+                ) || ECDSA.recover(signingHash, _signatures) == _signers[i],
+                "Invalid signature");
 
-        require(_signer != address(0), "Invalid signer");
-        require(
-            (
-                isContract(_signer) && IERC1271(_signer).isValidSignature(abi.encodePacked(signingHash), _signature) == EIP1271_MAGICVALUE
-            ) || ECDSA.recover(signingHash, _signature) == _signer,
-            "Invalid signature");
+            approveExecution(_signers[i],  _approveHash, _peerHash, _weights[i], _ensNodes[i]);
 
-        approveExecution(_signer,  _approveHash, _peerHash, _weight, _ensNode);
+        }
     }
 
 
@@ -187,6 +193,7 @@ contract ERC2429 {
         uint256[] calldata _indexes
     )
         external
+        override
     {
         //bytes32 publicHash = configurations[_calldest].publicHash;
         require(configurations[_calldest].publicHash != bytes32(0), "Recovery not set");
