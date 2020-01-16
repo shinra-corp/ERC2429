@@ -98,22 +98,39 @@ contract AccountContract is IMultiRecovery, Controlled {
         emit Activated();
     }
 
-    /**
+     /**
      * @notice Approves a recovery.
-     * This method is important for when the address is an contract (such as Identity).
-     * @param _proofPubHash seed of `publicHash`
+     * This method is important for when the address is an contract and dont implements EIP1271.
+     * @param _peerHash seed of `publicHash`
      * @param _secretCall Hash of the recovery call
      * @param _proof Merkle proof of friendsMerkleRoot with msg.sender
-     * @param _ensName if present, the _proof is checked against _ensName.
+     * @param _ensNode if present, the _proof is checked against _ensNode.
      */
-    function approve(bytes32 _proofPubHash, bytes32 _secretCall, bytes32[] calldata _proof, bytes calldata _ensName)
+    function approve(bytes32 _peerHash, bytes32 _secretCall, bytes32[] calldata _proof, bytes32 _ensNode)
     external
     override
     {
-        require(MerkleProof.verify(
-            _proof,
-            addressListMerkleRoot,
-            keccak256(abi.encodePacked(_proofPubHash, msg.sender))
+        address _signer = msg.sender; //Who
+        bytes32 _leaf; //Where
+
+        //if we received a node then we must resolve and check that address
+        if(_ensNode != bytes32(0)) {
+            leaf = keccak256(abi.encodePacked(_peerHash, _ensNode));
+            require
+            (
+
+            );
+
+        } else {
+
+        }
+
+        require
+        (
+            MerkleProof.verify(
+                _proof,
+                addressListMerkleRoot,
+                keccak256(abi.encodePacked(_proofPubHash, msg.sender))
         ), "Invalid proof");
 
         //INCOMPLETE IMPLEMENTATION - ENS RESOLVER and REMOTE CALL
@@ -216,5 +233,62 @@ contract AccountContract is IMultiRecovery, Controlled {
         (success, ) = _dest.call(_data);
         emit Execution(success);
 
+    }
+
+
+    /**
+     * @param _signer address of _signature processor. if _signer is a contract, must be ERC1271.
+     * @param _peerHash seed of `publicHash`
+     * @param _secretCall Hash of the recovery call
+     * @param _proof Merkle proof of friendsMerkleRoot with msg.sender
+     * @param _ensNode if present, the _proof is checked against _ensName.
+     */
+    function approveExecution
+    (
+        bytes32 _secretCall,
+        address _signer,
+        bytes32 _ensNode,
+        bytes32 _peerHash,
+        bytes32[] memory _proof
+    )
+    internal
+    {
+        bytes32 leaf;
+        if(_ensNode != bytes32(0)) {
+            leaf = keccak256(abi.encodePacked(_peerHash, _ensNode));
+            require(
+                _signer == ens.owner(_ensNode) ||
+                _signer == ResolverInterface(ens.resolver(_ensNode))addr(_ensNode),
+                "Invalid ENS entry"
+            );
+        } else {
+            leaf = keccak256(abi.encodePacked(_peerHash, _signer));
+        }
+        require(MerkleProof.verify(_proof, active.addressListMerkleRoot, leaf), "Invalid proof");
+        require(!signed[_secretCall][leaf], "Already approved");
+        signed[_secretCall][leaf] = true;
+        emit Approved(_secretCall, _signer);
+    }
+
+    /**
+     * @dev Internal function to determine if an address is a contract
+     * @param _target The address being queried
+     * @return True if `_addr` is a contract
+     */
+    function isContract(address _target) internal pure returns(bool result) {
+        assembly {
+            result := gt(extcodesize(_target), 0)
+        }
+    }
+
+    /**
+     * @notice get network identification where this contract is running
+     */
+    function _getChainID() internal pure returns (uint256) {
+        uint256 id;
+        assembly {
+            id := chainid()
+        }
+        return id;
     }
 }
