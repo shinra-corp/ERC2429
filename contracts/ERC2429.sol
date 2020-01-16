@@ -125,7 +125,7 @@ contract ERC2429 is IERC2429 {
         external
         override
     {
-        require(_signers.length == _weights.length, 'signers and weight should match');
+        require(_signers.length == _weights.length && _signers.length == _ensNodes.length, 'signers and weight should match');
         for(uint256 i = 0; i <_signers.length; i++) {
             bytes32 signingHash = ECDSA.toERC191SignedMessage(
                 address(this), abi.encodePacked(_getChainID(), _approveHash, _peerHash, _weights[i], _ensNodes[i])
