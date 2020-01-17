@@ -35,6 +35,8 @@ contract ERC2429 is IERC2429 {
     mapping(address => uint256) public nonces;
     //Save configurations
     mapping(address => RecoverySet) public configurations;
+    //Save pending setups
+    mapping(address => RecoverySet) public pending;
     //Save approved data
     mapping(bytes32 => Approval) public approved;
 
@@ -44,6 +46,7 @@ contract ERC2429 is IERC2429 {
     struct RecoverySet {
         bytes32 publicHash;
         uint256 setupDelay;
+        uint256 timestamp;
     }
 
     struct Approval {
@@ -51,13 +54,24 @@ contract ERC2429 is IERC2429 {
         uint weight;
     }
 
-
+    event SetupRequested(address indexed who, uint256 activation);
     event Activated(address indexed who);
     event Approved(bytes32 indexed approveHash, address approver, uint256 weight);
     event Execution(address indexed who, bool success);
 
     constructor(address _ens) public {
         ens = IENS(_ens);
+    }
+
+    /**
+     * @notice Cancels a pending setup to change the recovery parameters
+     */
+    function cancelSetup()
+        external
+        override
+    {
+        delete pending[msg.sender];
+        emit SetupRequested(msg.sender, 0);
     }
 
     /**
@@ -76,14 +90,36 @@ contract ERC2429 is IERC2429 {
         require(!discardedPubHash[_publicHash], "publicHash already used");
         discardedPubHash[_publicHash] = true;
 
-        RecoverySet memory newSet = RecoverySet(_publicHash, _setupDelay);
+        RecoverySet memory newSet = RecoverySet(_publicHash, _setupDelay, block.timestamp);
+        //if not set after then is a fresh setting
+        if(configurations[msg.sender].publicHash == bytes32(0)) {
 
-        require(configurations[msg.sender].publicHash == bytes32(0) ||
-                configurations[msg.sender].setupDelay < block.timestamp, 'delay time not meet'
-        );
+            configurations[msg.sender] = newSet;
+            emit Activated(msg.sender);
 
-        configurations[msg.sender] = newSet;
-        emit Activated(msg.sender);
+        } else {
+
+            pending[msg.sender] = newSet;
+            emit SetupRequested(msg.sender, newSet.timestamp + configurations[msg.sender].setupDelay);
+        }
+    }
+
+    /**
+     * @notice Activate a pending setup of recovery parameters
+     * @param _who address whih ready setupDelay.
+     */
+    function activate(address _who)
+        external
+        override
+    {
+        RecoverySet storage pendingUser = pending[_who];
+
+        require(pendingUser.timestamp > 0, "No pending setup");
+        require(pendingUser.timestamp + configurations[_who].setupDelay <= block.timestamp, "Waiting delay");
+
+        configurations[_who] = pendingUser;
+        delete pending[_who];
+        emit Activated(_who);
     }
 
     /**
